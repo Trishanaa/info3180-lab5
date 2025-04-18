@@ -5,9 +5,16 @@ Werkzeug Documentation:  https://werkzeug.palletsprojects.com/
 This file creates your application.
 """
 
+from datetime import datetime, timezone
+from werkzeug.utils import secure_filename
 from app import app
-from flask import render_template, request, jsonify, send_file
+from flask import render_template, Flask, jsonify, send_file, send_from_directory
 import os
+from app.forms import MovieForm
+from app.models import db, Movie
+from flask_wtf.csrf import generate_csrf
+from .models import Movie
+
 
 
 ###
@@ -37,6 +44,67 @@ def form_errors(form):
             error_messages.append(message)
 
     return error_messages
+
+
+@app.route('/api/v1/movies', methods=['POST'])
+def movies():
+    form = MovieForm()
+
+    if form.validate_on_submit():
+
+        upload_folder = 'C:\\Users\\kaydeen\\Documents\\info3180\\info3180-lab5\\uploads'
+        if not os.path.exists(upload_folder):
+            os.makedirs(upload_folder)
+
+
+        title = form.title.data
+        description = form.description.data
+        poster = form.poster.data
+
+        filename = secure_filename(poster.filename)
+        poster_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        poster.save(poster_path)
+
+        movie = Movie(
+            title=title,
+            description=description,
+            poster=filename,
+            created_at=datetime.now(timezone.utc)
+        )
+        db.session.add(movie)
+        db.session.commit()
+
+        return jsonify({
+            "message": "Movie Successfully added",
+            "title": movie.title,
+            "poster": movie.poster,
+            "description": movie.description
+
+        }), 201
+    return jsonify({"errors": form_errors(form)}), 400
+
+@app.route('/api/v1/movies', methods=['GET'])
+def get_movies():
+    movies = Movie.query.all()
+    movie_list = []
+    for movie in movies:
+        movie_list.append({
+          'id': movie.id,
+          'title': movie.title,
+          'description': movie.description,
+          'poster': f'/api/v1/posters/{movie.poster}' 
+        })
+    return jsonify({'movies': movie_list})
+
+@app.route('/api/v1/posters/<filename>')
+def get_poster(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+
+@app.route('/api/v1/csrf-token', methods=['GET'])
+def get_csrf():
+    return jsonify({'csrf_token': generate_csrf()})
 
 @app.route('/<file_name>.txt')
 def send_text_file(file_name):
